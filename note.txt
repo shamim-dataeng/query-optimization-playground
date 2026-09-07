@@ -1,0 +1,29 @@
+The problem, plainly
+
+For each pickup zone (PULocationID), find the 3 trips with the highest fare_amount that started there. Not the top 3 fares overall — top 3 within each zone, so a busy zone and a quiet zone each contribute their own top 3.
+
+Why it's harder than it looks
+
+A plain GROUP BY can't do this. GROUP BY PULocationID with MAX(fare_amount) gets you the top 1 fare per zone, collapsed into one row — but you lose the actual trip details (pickup time, distance, etc.) and you can't get top-3 that way at all, since GROUP BY only aggregates, it doesn't rank-and-keep multiple rows per group.
+
+So you need something that can say: "within this group, give me the row's rank, and keep the top 3 ranks" — while still keeping every column of the original row. That's the conceptual leap each layer is solving differently.
+
+Walking through each layer's logic
+
+Layer 1 — correlated subquery
+Logic: "for this trip, count how many other trips in the same zone have a higher fare. If fewer than 3 trips beat it, it's in the top 3."
+
+Why it's slow: that count has to be recomputed for every single row, by rescanning the whole table (or at least the same zone's rows) each time. For 3.58M rows, that's up to 3.58M mini-scans.
+
+Layer 2 — self-join
+Logic: same idea as Layer 1, but instead of a subquery per row, you join the table to itself on PULocationID where the other side's fare is higher, then GROUP BY and HAVING COUNT(*) < 3.
+
+Why it's still slow: you're not avoiding the comparison — you've just moved it into a join, which still generates a huge intermediate result (every trip paired with every higher-fare trip in its zone) before collapsing it back down.
+
+Layer 3 — window function (RANK() OVER (PARTITION BY ... ORDER BY ...))
+Logic: DuckDB partitions the data by zone, sorts each partition by fare descending, and assigns a rank — all in a single pass over the data, using a much cheaper sort/partition operation instead of pairwise comparisons.
+
+Why it's fast: this is fundamentally a different computational strategy — O(n log n) sort-based, not O(n²) comparison-based.
+
+
+This is the concept the whole exercise is testing.
