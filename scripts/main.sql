@@ -27,7 +27,7 @@ WITH CTE1 AS (
     SELECT
         PULocationID,
         fare_amount,
-        DENSE_RANK() OVER(PARTITION BY PULocationID ORDER BY FARE_AMOUNT DESC) AS rk
+        ROW_NUMBER() OVER(PARTITION BY PULocationID ORDER BY FARE_AMOUNT DESC) AS rn
     FROM 
         my_taxi
 )
@@ -37,7 +37,7 @@ SELECT
 FROM
     CTE1
 WHERE
-    rk<=3 and PULocationID=107;
+    rn<=3 and PULocationID=107;
 
 -- M2: Correlated Subquery
 SELECT
